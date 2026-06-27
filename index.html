@@ -809,75 +809,55 @@
   <div class="podium-stage" id="podium-stage"></div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
-// ── STATE ──
-const POLL_INTERVAL = 2000;
-const STORAGE_KEY = 'sdh_state';
+// ── STATE (Firebase Realtime Database sync) ──
 const REG_KEY = 'sdh_registered';
 
-let state = null;
-let pollTimer = null;
-let lastHash = '';
+let state = { players: [] };
+let gameState = null;     // /game : tournament + control state (no photos)
+let playersMap = {};      // /players : { id: {id, name, photo} }
 let isTV = false;
+let guestRegistered = !!localStorage.getItem(REG_KEY);
+
+const db = firebase.database();
+
+function buildState() {
+  state = Object.assign({ players: [] }, gameState || {});
+  state.players = Object.values(playersMap || {});
+}
 
 // ── INIT ──
 function init() {
-  const params = new URLSearchParams(window.location.search);
-  isTV = params.has('tv');
-
-  if (isTV) {
-    initTV();
-  } else {
-    initGuest();
-  }
+  isTV = new URLSearchParams(window.location.search).has('tv');
+  if (isTV) initTV(); else initGuest();
 }
 
 function initTV() {
-  startPolling();
+  db.ref('game').on('value', s => { gameState = s.val(); buildState(); renderTV(); });
+  db.ref('players').on('value', s => { playersMap = s.val() || {}; buildState(); renderTV(); });
 }
 
 function initGuest() {
-  const existing = localStorage.getItem(REG_KEY);
-  if (existing) {
-    const reg = JSON.parse(existing);
-    showAlreadyRegistered(reg);
-    return;
+  if (guestRegistered) {
+    try { showAlreadyRegistered(JSON.parse(localStorage.getItem(REG_KEY))); } catch(e) {}
   }
-  const state = readState();
-  if (state && state.locked) {
-    showView('view-closed');
-    return;
-  }
-  showView('view-register');
+  db.ref('game').on('value', s => { gameState = s.val(); renderGuest(); });
+}
+
+function renderGuest() {
+  if (guestRegistered) return;
+  if (gameState && gameState.locked) { showView('view-closed'); return; }
+  if (!document.querySelector('#view-register.active')) showView('view-register');
 }
 
 // ── VIEWS ──
 function showView(id) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-}
-
-// ── STATE READ/WRITE ──
-function readState() {
-  try {
-    const hash = window.location.hash.slice(1);
-    if (hash.startsWith('state=')) {
-      const encoded = hash.slice(6);
-      return JSON.parse(atob(encoded));
-    }
-  } catch(e) {}
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch(e) {}
-  return null;
-}
-
-function writeState(s) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  const encoded = btoa(JSON.stringify(s));
-  history.replaceState(null, '', '#state=' + encoded);
 }
 
 // ── REGISTRATION ──
@@ -921,17 +901,14 @@ function submitRegistration() {
   const name = document.getElementById('reg-name').value.trim();
   if (!name) { alert('Please enter your name.'); return; }
   if (!selfieData) { alert('Please take a selfie.'); return; }
+  if (gameState && gameState.locked) { showView('view-closed'); return; }
 
-  const state = readState() || { players: [], locked: false, bracket: null, currentMatch: null, results: [], stage: 'lobby' };
-  if (state.locked) { showView('view-closed'); return; }
-
-  const player = { id: Date.now().toString(), name, photo: selfieData };
-  state.players = state.players || [];
-  state.players.push(player);
-  writeState(state);
+  const id = Date.now().toString() + Math.floor(Math.random() * 1000);
+  db.ref('players/' + id).set({ id: id, name: name, photo: selfieData });
 
   const reg = { name, photo: selfieData };
   localStorage.setItem(REG_KEY, JSON.stringify(reg));
+  guestRegistered = true;
   showAlreadyRegistered(reg);
 }
 
@@ -949,6 +926,7 @@ function showAlreadyRegistered(reg) {
 // Single-laptop helper: register several guests from the same device
 function registerAnother() {
   localStorage.removeItem(REG_KEY);
+  guestRegistered = false;
   selfieData = null;
   document.getElementById('reg-name').value = '';
   const area = document.getElementById('selfie-area');
@@ -956,24 +934,8 @@ function registerAnother() {
   showView('view-register');
 }
 
-// ── TV POLLING ──
-function startPolling() {
-  renderTV();
-  pollTimer = setInterval(function() {
-    const current = window.location.hash;
-    if (current !== lastHash) {
-      lastHash = current;
-      state = readState();
-      renderTV();
-    } else {
-      state = readState();
-      renderTV();
-    }
-  }, POLL_INTERVAL);
-}
-
 function renderTV() {
-  if (!state) {
+  if (!gameState) {
     showView('view-tv-waiting');
     renderTVWaiting();
     return;

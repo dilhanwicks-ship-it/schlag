@@ -450,6 +450,9 @@
     <button class="btn-qr" onclick="showQRModal()">Show QR code for guests</button>
     <button class="btn-lock" id="btn-lock" onclick="confirmLock()">Lock and build fixture</button>
     <div class="lock-note" id="lock-note">Need at least 2 players to lock</div>
+    <div class="undo-row" style="border:none;margin-top:8px;padding-top:0;">
+      <button class="btn-undo" onclick="resetGame()">⟲ Reset game (clear all players)</button>
+    </div>
   </div>
 </div>
 
@@ -472,6 +475,7 @@
 
     <div class="undo-row">
       <button class="btn-undo" id="btn-undo" onclick="undoResult()">↩ Undo last result</button>
+      <button class="btn-undo" onclick="resetGame()">⟲ Reset game</button>
     </div>
 
     <div class="section-label" style="margin-top:16px;">Full fixture</div>
@@ -505,28 +509,56 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 // ── CONSTANTS ──
 const CORRECT_PIN = '1995';
-const STORAGE_KEY = 'sdh_state';
 const SESSION_KEY = 'sdh_admin_auth';
-const STAGE_ORDER = ['playin','qualifiers','quarters','semis','final','podium'];
 
 let pinBuffer = '';
-let state = null;
+let state = { players: [] };
+let gameState = null;     // /game : tournament + control state (no photos)
+let playersMap = {};      // /players : { id: {id, name, photo} }
 let timerInterval = null;
 let pendingWinnerId = null;
 let pendingMatchId = null;
 
+const db = firebase.database();
+
+function buildState() {
+  if (!gameState) {
+    gameState = { locked: false, bracket: null, currentMatch: null, results: [], stage: 'lobby',
+      timerSeconds: 60, timerRunning: false, timerExpired: false, flashing: false, history: [], podium: null };
+  }
+  state = Object.assign({}, gameState);
+  state.players = Object.values(playersMap || {});
+}
+
 // ── INIT ──
 function init() {
   if (sessionStorage.getItem(SESSION_KEY) === 'true') {
-    loadState();
-    enterApp();
+    startApp();
   } else {
     showView('view-pin');
   }
+}
+
+function startApp() {
+  db.ref('game').once('value').then(function(s) {
+    gameState = s.val();
+    const needInit = !gameState;
+    buildState();
+    if (needInit) saveState();       // seed an empty lobby game
+    db.ref('players').on('value', function(ps) {
+      playersMap = ps.val() || {};
+      buildState();
+      if (!state.locked) renderLobby();
+    });
+    enterApp();
+  });
 }
 
 function showView(id) {
@@ -561,8 +593,7 @@ function updatePinDots(error) {
 function checkPin() {
   if (pinBuffer === CORRECT_PIN) {
     sessionStorage.setItem(SESSION_KEY, 'true');
-    loadState();
-    enterApp();
+    startApp();
   } else {
     document.getElementById('pin-error').textContent = 'Incorrect PIN. Try again.';
     updatePinDots(true);
@@ -574,40 +605,25 @@ function checkPin() {
 }
 
 // ── STATE ──
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    state = raw ? JSON.parse(raw) : null;
-  } catch(e) { state = null; }
-  if (!state) {
-    state = { players: [], locked: false, bracket: null, currentMatch: null, results: [], stage: 'lobby', timerSeconds: 60, timerRunning: false, timerExpired: false, flashing: false, history: [], podium: null };
-    saveState();
-  }
-}
-
+// Players live at /players (guests write their own entry); the rest of the
+// tournament/control state lives at /game and is owned by the admin.
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  const encoded = btoa(JSON.stringify(state));
-  history.replaceState(null, '', '#state=' + encoded);
+  const g = Object.assign({}, state);
+  delete g.players;
+  gameState = g;
+  db.ref('game').set(JSON.parse(JSON.stringify(g))); // round-trip strips undefined
 }
 
 // ── APP ENTRY ──
 function enterApp() {
-  loadState();
+  buildState();
   if (!state.locked) {
     showView('view-lobby');
     renderLobby();
-    startLobbyPolling();
   } else {
     showView('view-match');
     renderMatch();
   }
-}
-
-// ── LOBBY ──
-let lobbyPoll = null;
-function startLobbyPolling() {
-  lobbyPoll = setInterval(() => { loadState(); renderLobby(); }, 2000);
 }
 
 function renderLobby() {
@@ -650,25 +666,28 @@ function renderLobby() {
 }
 
 function removePlayer(id) {
-  state.players = state.players.filter(p => p.id !== id);
-  saveState();
-  renderLobby();
+  db.ref('players/' + id).remove(); // /players listener re-renders the lobby
 }
 
 function addGuestManually() {
   const name = (prompt('Guest name:') || '').trim();
   if (!name) return;
-  state.players = state.players || [];
-  state.players.push({ id: Date.now().toString() + Math.floor(Math.random() * 1000), name, photo: null });
-  saveState();
-  renderLobby();
+  const id = Date.now().toString() + Math.floor(Math.random() * 1000);
+  db.ref('players/' + id).set({ id: id, name: name, photo: null });
+}
+
+function resetGame() {
+  if (!confirm('Reset everything — remove all players and clear the tournament? This cannot be undone.')) return;
+  if (timerInterval) clearInterval(timerInterval);
+  Promise.all([db.ref('players').remove(), db.ref('game').remove()]).then(function() {
+    location.reload();
+  });
 }
 
 function confirmLock() {
   const count = (state.players || []).length;
   if (count < 2) return;
   if (!confirm('Lock registration and build the fixture for ' + count + ' players? This cannot be undone.')) return;
-  clearInterval(lobbyPoll);
   lockAndGenerate();
 }
 
