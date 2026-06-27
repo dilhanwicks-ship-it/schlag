@@ -399,6 +399,14 @@
   .modal-confirm { background: var(--metal-gold); color: #2a1800; }
   .modal-crest { width: 40px; height: 40px; margin: 0 auto 8px; display: block; }
   .match-vs-crest { width: 22px; height: 22px; margin: 0 6px; vertical-align: middle; }
+
+  /* ════ GOWER TOWER vibe ════ */
+  :root { --gt-yellow: #f5dd0a; }
+  .gt-spark { color: var(--gt-yellow); filter: drop-shadow(0 0 5px rgba(245,221,10,0.55)); font-size: 0.85em; margin: 0 7px; }
+  .pin-sub { color: var(--gt-yellow); font-weight: 600; }
+  .btn-start { background: linear-gradient(180deg, #16a34a, #0e7a37); }
+  .btn-start::before { content: '✦ '; color: var(--gt-yellow); }
+  .btn-start::after { content: ' ✦'; color: var(--gt-yellow); }
 </style>
 </head>
 <body>
@@ -408,7 +416,7 @@
   <div class="pin-card">
     <div class="ico ico-laurels pin-crest"></div>
     <div class="pin-logo">Schlag den Henssler</div>
-    <div class="pin-sub">Admin access</div>
+    <div class="pin-sub"><span class="gt-spark">✦</span>Admin access<span class="gt-spark">✦</span></div>
     <div class="pin-dots">
       <div class="pin-dot" id="dot-0"></div>
       <div class="pin-dot" id="dot-1"></div>
