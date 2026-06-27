@@ -934,15 +934,19 @@ function closeModal() {
 
 function confirmWinner() {
   if (!pendingWinnerId || !pendingMatchId) return;
+
+  // Capture the selection BEFORE closing the modal (closeModal clears these)
+  const winnerId = pendingWinnerId;
+  const matchId = pendingMatchId;
   closeModal();
 
   // Save history snapshot for undo
   state.history.push(JSON.stringify(state.bracket));
 
   // Set winner
-  const match = getMatchById(pendingMatchId);
+  const match = getMatchById(matchId);
   if (match) {
-    match.winner = pendingWinnerId;
+    match.winner = winnerId;
   }
 
   // Stop timer and flashing
