@@ -1,0 +1,11 @@
+Icon assets in this folder are from game-icons.net and are licensed CC BY 3.0.
+
+crown.svg          — by Lorc          — https://game-icons.net/1x1/lorc/crown.html
+laurels.svg        — by Lorc          — https://game-icons.net/1x1/lorc/laurels.html
+trophy.svg         — by Lorc          — https://game-icons.net/1x1/lorc/trophy.html
+medal.svg          — by Lorc          — https://game-icons.net/1x1/lorc/medal.html
+crossed-swords.svg — by Lorc          — https://game-icons.net/1x1/lorc/crossed-swords.html
+
+License: Creative Commons Attribution 3.0 (https://creativecommons.org/licenses/by/3.0/)
+The black background rectangle was removed from each file so the shapes can be
+recoloured with CSS metallic gradients via mask-image.
