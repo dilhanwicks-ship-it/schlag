@@ -555,15 +555,22 @@ function init() {
 }
 
 function startApp() {
-  db.ref('game').once('value').then(function(s) {
-    gameState = s.val();
+  // Load BOTH game and players before rendering, so a locked game's fixture
+  // doesn't draw with an empty player list.
+  Promise.all([
+    db.ref('game').once('value'),
+    db.ref('players').once('value')
+  ]).then(function(res) {
+    gameState = res[0].val();
+    playersMap = res[1].val() || {};
     const needInit = !gameState;
     buildState();
-    if (needInit) saveState();       // seed an empty lobby game
+    if (needInit) saveState();       // seed an empty lobby game only if none exists
+    // Live updates: re-render whichever view is currently active
     db.ref('players').on('value', function(ps) {
       playersMap = ps.val() || {};
       buildState();
-      if (!state.locked) renderLobby();
+      if (state.locked) renderMatch(); else renderLobby();
     });
     enterApp();
   });
